@@ -32,25 +32,25 @@ import java.util.function.BiConsumer;
 
 /** Extiende el MCP existente con operaciones sobre la sesión real del IDE. */
 public final class DebuggerToolsProvider implements McpToolsProvider {
-    private static final String SESSION = "\"sessionId\":{\"type\":\"string\",\"description\":\"ID devuelto por debugger_status; se puede omitir si solo hay una sesión activa\"}";
+    private static final String SESSION = "\"sessionId\":{\"type\":\"string\",\"description\":\"Session ID returned by debugger_status. May be omitted when exactly one session is active.\"}";
     private static final String EXPRESSION = "\"expression\":{\"type\":\"string\"}";
 
     @Override
     public List<McpTool> getTools() {
         return List.of(
-            tool("debugger_status", "Lista sesiones, posición actual, Watches y breakpoints del proyecto.", "", Set.of(), true,
+            tool("debugger_status", "Lists the project's debug sessions, current position, Watches and breakpoints.", "", Set.of(), true,
                 (c, out) -> out.complete(status(c.project))),
-            tool("debugger_control", "Controla la sesión y espera una nueva pausa con posición y frame, su terminación o el timeout. No reenvíes el control si vence la espera: puede seguir en curso.",
+            tool("debugger_control", "Controls the session and waits for the next pause (with position and frame), for the session to end, or for the timeout. If the wait times out, do not send the control again: the action may still be running.",
                 SESSION + ",\"action\":{\"type\":\"string\",\"enum\":[\"step_into\",\"step_over\",\"step_out\",\"resume\",\"pause\"]},\"timeoutMs\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":30000,\"default\":10000}", Set.of("action"), false,
                 DebuggerToolsProvider::control),
-            tool("debugger_stack", "Lee hasta 20 frames del thread seleccionado, sin evaluar sus variables.", SESSION, Set.of(), true,
+            tool("debugger_stack", "Reads up to 20 frames of the selected thread without evaluating their variables.", SESSION, Set.of(), true,
                 DebuggerToolsProvider::stack),
-            tool("debugger_evaluate", "Evalúa una expresión en el frame seleccionado y pausado. Devuelve la representación del debugger, limitada a 4096 caracteres. La expresión puede ejecutar código.",
+            tool("debugger_evaluate", "Evaluates an expression in the selected, paused frame. Returns the debugger's presentation of the value, truncated to 4096 characters. The expression can execute code.",
                 SESSION + "," + EXPRESSION, Set.of("expression"), false, DebuggerToolsProvider::evaluate),
-            tool("debugger_breakpoint", "Añade o elimina un breakpoint real. condition establece una condición; omitirla conserva la existente y una cadena vacía la elimina. Las líneas empiezan en 1.",
-                "\"action\":{\"type\":\"string\",\"enum\":[\"add\",\"remove\"]},\"filePath\":{\"type\":\"string\"},\"line\":{\"type\":\"integer\",\"minimum\":1},\"condition\":{\"type\":\"string\",\"description\":\"Expresión válida en el frame. Solo con add; omitir conserva y una cadena vacía elimina la condición.\"}",
+            tool("debugger_breakpoint", "Adds or removes a real line breakpoint. condition sets a condition: omitting it keeps the existing one and an empty string removes it. Lines are 1-based.",
+                "\"action\":{\"type\":\"string\",\"enum\":[\"add\",\"remove\"]},\"filePath\":{\"type\":\"string\"},\"line\":{\"type\":\"integer\",\"minimum\":1},\"condition\":{\"type\":\"string\",\"description\":\"Expression valid in the frame. Only with add. Omit to keep the existing condition; an empty string removes it.\"}",
                 Set.of("action", "filePath", "line"), false, (c, out) -> out.complete(breakpoint(c))),
-            tool("debugger_watch", "Añade, elimina o lista expresiones en el panel Watches real de PyCharm. Añadir un Watch permite al debugger reevaluarlo en cada pausa.",
+            tool("debugger_watch", "Adds, removes or lists expressions in PyCharm's real Watches panel. A Watch that is added is re-evaluated by the debugger at every pause.",
                 SESSION + "," + EXPRESSION + ",\"action\":{\"type\":\"string\",\"enum\":[\"add\",\"remove\",\"list\"]}", Set.of("action"), false,
                 (c, out) -> out.complete(watch(c)))
         );
@@ -60,7 +60,7 @@ public final class DebuggerToolsProvider implements McpToolsProvider {
 
     private static McpTool tool(String name, String description, String properties, Set<String> required,
                                 boolean readOnly, BiConsumer<Context, CompletableFuture<JsonObject>> operation) {
-        String projectProperty = "\"projectPath\":{\"type\":\"string\",\"description\":\"Ruta absoluta de un proyecto abierto; si se omite, usa el proyecto del MCP\"}";
+        String projectProperty = "\"projectPath\":{\"type\":\"string\",\"description\":\"Absolute path of an open project. If omitted, uses the project the MCP server is serving.\"}";
         var schema = new McpToolSchema((JsonObject) Json.Default.parseToJsonElement(
             "{" + projectProperty + (properties.isEmpty() ? "" : "," + properties) + "}"), required, Map.of(), "$defs");
         var descriptor = new McpToolDescriptor(name, name, description,

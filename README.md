@@ -21,10 +21,10 @@ does. There is no separate debug adapter and no desktop automation.
 src/main/java/local/pycharmdebugger/DebuggerToolsProvider.java   all six tools, 401 lines
 src/main/resources/META-INF/plugin.xml                           plugin descriptor
 build.gradle.kts  settings.gradle.kts  gradle/  gradlew          Gradle build
-pycharm-debugger-mcp/lib/debugger-mcp.jar                        the shipped 0.1.2 build
+pycharm-debugger-mcp/lib/debugger-mcp.jar                        the shipped 0.1.2 build (still has the Spanish descriptions until rebuilt)
 ```
 
-The whole plugin is one Java class. Comments in it are Spanish, as are the tool descriptions.
+The whole plugin is one Java class. Tool and parameter descriptions are in English. Code comments and error messages are still in Spanish.
 
 ## Building
 
@@ -40,7 +40,7 @@ build is about ten seconds.
 The installable zip lands in `build/distributions/`, laid out exactly like the one in
 `pycharm-debugger-mcp/`.
 
-The build output was checked against the shipped `debugger-mcp.jar`: same seven classes with the
+The build output was checked against the shipped `debugger-mcp.jar` before the descriptions were translated: same seven classes with the
 same inner-class numbering, identical method signatures, and the same 97 string constants. The
 class files differ in size only because this build keeps debug info and runs IntelliJ's bytecode
 instrumentation.
@@ -150,8 +150,8 @@ interpolating shell text.
   `XValuePresentationUtil` are implementation classes, not platform API. The session id comes from
   `XDebugSessionImpl.getId()`, so a remote or split-mode session that is not a local
   `XDebugSessionImpl` is rejected outright.
-- **Spanish strings.** Tool descriptions and error messages are in Spanish, and MCP clients show
-  them to the model as-is.
+- **Spanish error messages.** Tool and parameter descriptions are in English, but error messages
+  returned by the tools are still Spanish, and MCP clients show them to the model as-is.
 - **No disable, no mute, no exception breakpoints.** `debugger_breakpoint` only adds and removes
   line breakpoints. `debugger_status` reports `breakpointsMuted` but nothing toggles it.
 - **Shared state.** Everything here mutates the IDE a person may be using. Record the breakpoints,
