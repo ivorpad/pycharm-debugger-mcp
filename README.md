@@ -18,7 +18,7 @@ does. There is no separate debug adapter and no desktop automation.
 src/main/java/local/pycharmdebugger/DebuggerToolsProvider.java   debugger tools
 src/main/resources/META-INF/plugin.xml                           plugin descriptor
 build.gradle.kts  settings.gradle.kts  gradle/  gradlew          Gradle build
-dist/pycharm-debugger-mcp-0.1.6.zip                              installable plugin
+dist/pycharm-debugger-mcp-0.1.7.zip                              installable plugin
 ```
 
 Tool and parameter descriptions are in English. Code comments and error messages are still in Spanish.
@@ -38,9 +38,29 @@ The build writes the installable ZIP to `dist/`. To compile against a local PyCh
 
 ## Install
 
-Open **Settings → Plugins → ⚙ → Install Plugin from Disk…** and select [pycharm-debugger-mcp-0.1.6.zip](dist/pycharm-debugger-mcp-0.1.6.zip). Enable the bundled MCP Server and restart PyCharm if prompted.
+Open **Settings → Plugins → ⚙ → Install Plugin from Disk…** and select [pycharm-debugger-mcp-0.1.7.zip](dist/pycharm-debugger-mcp-0.1.7.zip). Enable the bundled MCP Server and restart PyCharm if prompted.
 
 After the restart the tools show up in the MCP server's catalog under the `Debugger` category.
+
+## Quick start
+
+Call `debugger_setup` with `{}` if your MCP client supplies the project context. For a standalone client, pass the absolute path to the open PyCharm project. From the project root, with a configured mcporter alias named `pycharm`, run:
+
+```sh
+mcporter call pycharm.debugger_setup "projectPath=$PWD"
+```
+
+Pick a returned `tool` and pass its `arguments` unchanged. The arguments include the project path. If you know what to run, go straight there:
+
+| Goal | Arguments to `debugger_setup` |
+| --- | --- |
+| Debug a local file with its PyCharm interpreter | `{"filePath":"src/main.py"}` |
+| Start the project's existing pydevd server | `{"mode":"pydevd"}` |
+| Create and launch a server for a Docker Desktop container | `{"mode":"pydevd","host":"host.docker.internal","remoteRoot":"/app","port":5679}` |
+
+For a new server, supply the IDE hostname as seen from the target and the target directory matching the project root. The port defaults to 5678. With several saved servers, setup returns a choice. With a running match, it returns the existing session. If settings differ, it shows the current settings and an explicit update call.
+
+After server startup, run your prepared launcher in the target. If you need to prepare one, follow the returned `clientSetup` call for the matching client package, installation commands and a Python snippet using your endpoint. Follow `next` for the IDE session status. If startup is slow or a call times out, the returned status call checks progress without launching a second process.
 
 ## Tools
 
@@ -51,6 +71,7 @@ an omitted `sessionId` is an error rather than a guess.
 
 | Tool | Required | Does |
 | --- | --- | --- |
+| `debugger_setup` | | Discovers targets, launches a file or configuration, or sets up a pydevd server and returns the next call |
 | `debugger_configurations` | | Lists project configurations, Debug runner availability, pydevd settings and the last MCP launch outcome |
 | `debugger_configure_pydevd` | `configurationName`, `port` on creation | Creates or updates a native Python Debug Server with optional `host` and `sourceMappings` |
 | `debugger_launch` | `configurationName` or `filePath` | Launches with the Debug executor. A project file can include a 1-based `line` to select a runnable target |

@@ -46,7 +46,7 @@ import java.util.concurrent.TimeUnit;
 import static local.pycharmdebugger.DebuggerToolsProvider.*;
 
 final class LaunchTools {
-    private static final String PYDEVD = "PyRemoteDebugConfigurationType";
+    static final String PYDEVD = "PyRemoteDebugConfigurationType";
     private static final String NAME = "\"configurationName\":{\"type\":\"string\",\"description\":\"Exact project run configuration name.\"}";
     private static final String BACKEND = "\"backend\":{\"type\":\"string\",\"enum\":[\"pydevd\"]}";
     // Access the map on the IDE dispatch thread. Each attempt completes independently of its caller's timeout.
@@ -83,7 +83,7 @@ final class LaunchTools {
                 });
     }
 
-    private static RunnerAndConfigurationSettings fromFile(Project project, JsonObject args) {
+    static RunnerAndConfigurationSettings fromFile(Project project, JsonObject args) {
         Path path = Path.of(string(args, "filePath"));
         if (!path.isAbsolute()) {
             if (project.getBasePath() == null) throw new IllegalArgumentException("Supply an absolute project file path.");
@@ -116,12 +116,12 @@ final class LaunchTools {
         return settings;
     }
 
-    private static ConfigurationType serverType() {
+    static ConfigurationType serverType() {
         return ConfigurationType.CONFIGURATION_TYPE_EP.getExtensionList().stream()
                 .filter(type -> PYDEVD.equals(type.getId())).findFirst().orElse(null);
     }
 
-    private static RunnerAndConfigurationSettings named(Project project, String name) {
+    static RunnerAndConfigurationSettings named(Project project, String name) {
         var matches = RunManager.getInstance(project).getAllSettings().stream().filter(s -> name.equals(s.getName())).toList();
         if (matches.size() > 1) throw new IllegalArgumentException("Multiple configurations named " + name + ". Give them distinct names in PyCharm.");
         return matches.isEmpty() ? null : matches.getFirst();
@@ -133,7 +133,7 @@ final class LaunchTools {
         return xml;
     }
 
-    private static JsonObject describe(Project project, RunnerAndConfigurationSettings settings) {
+    static JsonObject describe(Project project, RunnerAndConfigurationSettings settings) {
         var attempts = project.getUserData(LAUNCHES);
         var last = attempts == null ? null : attempts.get(settings.getUniqueID());
         JsonObject server = null;
@@ -150,7 +150,7 @@ final class LaunchTools {
                 "server", server, "lastLaunch", last == null ? null : last.getNow(object("outcome", "starting")));
     }
 
-    private static JsonObject configure(Project project, JsonObject args) {
+    static JsonObject configure(Project project, JsonObject args) {
         if (args.containsKey("backend") && !"pydevd".equals(string(args, "backend"))) throw new IllegalArgumentException("backend must be pydevd");
         var type = serverType();
         if (type == null) throw new IllegalStateException("Python Debug Server is unavailable in this IDE. Check the Python plugin and PyCharm edition.");
@@ -203,12 +203,12 @@ final class LaunchTools {
         JDOMExternalizerUtil.writeField(xml, name, value);
     }
 
-    private static List<XDebugSession> matching(Project project, RunnerAndConfigurationSettings settings) {
+    static List<XDebugSession> matching(Project project, RunnerAndConfigurationSettings settings) {
         return Arrays.stream(XDebuggerManager.getInstance(project).getDebugSessions()).filter(s -> !s.isStopped())
                 .filter(s -> s.getExecutionEnvironment() != null && s.getExecutionEnvironment().getRunnerAndConfigurationSettings() == settings).toList();
     }
 
-    private static void start(Project project, RunnerAndConfigurationSettings settings, CompletableFuture<JsonObject> out) {
+    static void start(Project project, RunnerAndConfigurationSettings settings, CompletableFuture<JsonObject> out) {
         var sessions = matching(project, settings);
         if (!sessions.isEmpty()) {
             out.complete(object("outcome", "already_active", "sessionIds", sessions.stream().map(DebuggerToolsProvider::sessionId).toList()));

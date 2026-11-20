@@ -40,6 +40,7 @@ public final class DebuggerToolsProvider implements McpToolsProvider {
     @Override
     public List<McpTool> getTools() {
         return List.of(
+            SetupTool.tool(),
             tool("debugger_status", "Lists the project's debug sessions, current position, Watches and breakpoints.", "", Set.of(), true,
                 (c, out) -> out.complete(status(c.project))),
             tool("debugger_control", "Steps, resumes, pauses, stops, or restarts the selected session. For stepping and resume, waits for the next pause (with position and frame), for the session to end, or for the timeout. If the wait times out, do not send the control again: the action may still be running.",
@@ -92,12 +93,17 @@ public final class DebuggerToolsProvider implements McpToolsProvider {
                     }
                 }
                 var out = new CompletableFuture<JsonObject>();
-                Project mcpProject = args.get("projectPath") == null || args.get("projectPath") == JsonNull.INSTANCE
-                        ? McpCallInfoKt.getProjectOrNull(continuation.getContext()) : null;
+                var callInfo = McpCallInfoKt.getMcpCallInfoOrNull(continuation.getContext());
+                Project mcpProject = callInfo == null ? null : callInfo.getProject();
                 // El EDT modifica los modelos del IDE; solo el worker MCP espera la respuesta.
                 app.invokeLater(() -> {
                     if (out.isDone()) return;
                     try {
+                        if (name.equals("debugger_setup") && optionalString(args, "projectPath") == null && mcpProject == null
+                                && ProjectManager.getInstance().getOpenProjects().length != 1) {
+                            out.complete(SetupTool.chooseProject(args));
+                            return;
+                        }
                         operation.accept(new Context(project(args, mcpProject), args), out);
                     } catch (RuntimeException error) {
                         out.completeExceptionally(error);
@@ -107,6 +113,13 @@ public final class DebuggerToolsProvider implements McpToolsProvider {
                     return result(out.get(waitMillis, TimeUnit.MILLISECONDS), false);
                 } catch (TimeoutException error) {
                     out.cancel(false);
+                    if (name.equals("debugger_setup")) {
+                        String path = optionalString(args, "projectPath");
+                        if (path == null && mcpProject != null) path = mcpProject.getBasePath();
+                        var scope = path == null ? object() : object("projectPath", path);
+                        return result(object("outcome", "timeout", "message", "PyCharm did not finish setup before the deadline. Check sessions before repeating a launch.",
+                                "next", object("tool", "debugger_status", "arguments", scope)), false);
+                    }
                     return result(object("error", "El IDE no respondió dentro del plazo. Una operación ya iniciada puede seguir en curso; consulta debugger_status antes de repetirla."), true);
                 } catch (InterruptedException error) {
                     out.cancel(false);
@@ -149,6 +162,10 @@ public final class DebuggerToolsProvider implements McpToolsProvider {
                     && Path.of(candidate.getBasePath()).normalize().equals(Path.of(path).normalize())) return candidate;
             }
             throw new IllegalArgumentException("El proyecto indicado no está abierto en este IDE.");
+        }
+        if (fallback == null) {
+            var open = ProjectManager.getInstance().getOpenProjects();
+            if (open.length == 1) return open[0];
         }
         if (fallback == null || fallback.isDisposed()) throw new IllegalArgumentException("Indica projectPath de un proyecto abierto.");
         return fallback;
