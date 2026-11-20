@@ -1,8 +1,6 @@
 # Debugger MCP Extension for PyCharm
 
-A small PyCharm plugin that exposes the IDE's real debugger over MCP. It registers six debugger tools on
-JetBrains' built-in MCP server, so an MCP client can set breakpoints, step, read the stack,
-evaluate expressions and edit the Watches panel in a running PyCharm debug session.
+Launch and control PyCharm debug sessions through JetBrains' built-in MCP server. An MCP client can start a project file, launch a saved Debug configuration, or configure a Python Debug Server for a process running in a container.
 
 It drives the same `XDebugSession` the UI drives. Breakpoints appear in the gutter, Watches appear
 in the Watches panel, and a step taken over MCP moves the editor the same way clicking Step Over
@@ -12,7 +10,7 @@ does. There is no separate debug adapter and no desktop automation.
 
 - PyCharm with the bundled debugger and MCP APIs. The extension handles the tool descriptor formats in 2026.2.2 and 2026.3.0.1.
 - The bundled **MCP Server** plugin (`com.intellij.mcpServer`) enabled, with its server running.
-- A Python debug session started from the IDE. The plugin attaches to sessions; it cannot start one.
+- For local Python files, configure the project or module interpreter in PyCharm. For incoming pydevd connections, the IDE must offer **Python Debug Server** in **Run → Edit Configurations**.
 
 ## Repository layout
 
@@ -20,7 +18,7 @@ does. There is no separate debug adapter and no desktop automation.
 src/main/java/local/pycharmdebugger/DebuggerToolsProvider.java   debugger tools
 src/main/resources/META-INF/plugin.xml                           plugin descriptor
 build.gradle.kts  settings.gradle.kts  gradle/  gradlew          Gradle build
-dist/pycharm-debugger-mcp-0.1.5.zip                              installable plugin
+dist/pycharm-debugger-mcp-0.1.6.zip                              installable plugin
 ```
 
 Tool and parameter descriptions are in English. Code comments and error messages are still in Spanish.
@@ -40,7 +38,7 @@ The build writes the installable ZIP to `dist/`. To compile against a local PyCh
 
 ## Install
 
-Open **Settings → Plugins → ⚙ → Install Plugin from Disk…** and select [pycharm-debugger-mcp-0.1.5.zip](dist/pycharm-debugger-mcp-0.1.5.zip). Enable the bundled MCP Server and restart PyCharm if prompted.
+Open **Settings → Plugins → ⚙ → Install Plugin from Disk…** and select [pycharm-debugger-mcp-0.1.6.zip](dist/pycharm-debugger-mcp-0.1.6.zip). Enable the bundled MCP Server and restart PyCharm if prompted.
 
 After the restart the tools show up in the MCP server's catalog under the `Debugger` category.
 
@@ -53,23 +51,56 @@ an omitted `sessionId` is an error rather than a guess.
 
 | Tool | Required | Does |
 | --- | --- | --- |
+| `debugger_configurations` | | Lists project configurations, Debug runner availability, pydevd settings and the last MCP launch outcome |
+| `debugger_configure_pydevd` | `configurationName`, `port` on creation | Creates or updates a native Python Debug Server with optional `host` and `sourceMappings` |
+| `debugger_launch` | `configurationName` or `filePath` | Launches with the Debug executor. A project file can include a 1-based `line` to select a runnable target |
 | `debugger_status` | — | Sessions, current position, Watches, breakpoints, `breakpointsMuted` |
-| `debugger_control` | `action` | `step_into` / `step_over` / `step_out` / `resume` / `pause`, then waits for the next pause |
+| `debugger_control` | `action` | Step, resume, pause, stop, or restart a session |
 | `debugger_stack` | — | Up to 20 frames of the selected thread, positions only, no variable evaluation |
 | `debugger_evaluate` | `expression` | Evaluates in the selected paused frame |
 | `debugger_breakpoint` | `action`, `filePath`, `line` | Adds or removes a line breakpoint, with an optional `condition` |
 | `debugger_watch` | `action` | `add` / `remove` / `list` against the real Watches panel |
 | `debugger_origin` | `name`, `action` | One-shot change monitor, its status, or paged origin and history |
 
-`debugger_status` and `debugger_stack` are annotated read-only. The other tools are annotated
+`debugger_configurations`, `debugger_status` and `debugger_stack` are annotated read-only. The other tools are annotated
 destructive, because they change shared IDE state or run code in the debuggee.
+
+### Start a container session with pydevd
+
+If the project already has a Python Debug Server configuration, call `debugger_launch` with its exact name. This uses the IDE's Debug executor without UI automation.
+
+```json
+{"configurationName":"Wave pydevd (container)","executor":"Debug"}
+```
+
+For a new project, call `debugger_configure_pydevd` first. This example maps the project root on the current machine to `/app` in a Docker Desktop container. Use the port and source directory from your container launcher and a hostname the container can reach.
+
+```json
+{
+  "configurationName": "Wave pydevd (container)",
+  "backend": "pydevd",
+  "host": "host.docker.internal",
+  "port": 5679,
+  "sourceMappings": [{"localRoot": ".", "remoteRoot": "/app"}]
+}
+```
+
+Launch the configuration, then run your prepared pydevd client in the container. The container needs a PyCharm-compatible pydevd client. The host field supplies the IDE address for that client. PyCharm opens the listening socket. A `started` result confirms IDE startup. A breakpoint hit confirms the client connected and the mapped source can be debugged. If startup returns `starting`, look up `lastLaunch` with `debugger_configurations` before retrying.
+
+Calling the configuration tool again updates only the supplied fields. Pass `"sourceMappings":[]` to clear the mappings. If `pydevdServerAvailable` is false, check that the Python plugin is enabled and the IDE edition includes Python Debug Server. An existing DAP configuration can also be launched by name when its own Debug runner is installed. For a pydevd client, select the Python Debug Server configuration.
+
+Use `debugger_status` to get the session ID. Call `debugger_control` with `{"action":"stop","sessionId":"…"}` to release the session or `{"action":"restart","sessionId":"…"}` to relaunch the IDE configuration. For a server restart, reconnect the container client.
+
+### Start a local file
+
+Call `debugger_launch` with `{"filePath":"src/main.py"}`, even if the project has no saved run configuration. PyCharm chooses the run configuration and interpreter for that file. Select the intended virtualenv, Poetry or uv interpreter in the project first. The MCP tool does not invoke a package manager or install a runner.
 
 ### Things worth knowing before you call them
 
 **Lines are 1-based**, on the way in and on the way out, matching what the editor shows. A line
 outside the file is rejected rather than clamped.
 
-**`debugger_control` waits.** It installs a session listener, issues the action, and blocks until
+**Step, resume and pause wait for a debugger event.** The tool installs a session listener, issues the action, and blocks until
 the session pauses again, terminates, or `timeoutMs` expires (1–30000, default 10000). The result
 carries `outcome` (`paused`, `stopped`, `timeout`, `already_paused`, `requested`), `positionBefore`,
 `position` and `frameReady`. A `timeout` does not cancel anything: the step may still be running.

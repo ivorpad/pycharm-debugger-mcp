@@ -42,9 +42,12 @@ public final class DebuggerToolsProvider implements McpToolsProvider {
         return List.of(
             tool("debugger_status", "Lists the project's debug sessions, current position, Watches and breakpoints.", "", Set.of(), true,
                 (c, out) -> out.complete(status(c.project))),
-            tool("debugger_control", "Controls the session and waits for the next pause (with position and frame), for the session to end, or for the timeout. If the wait times out, do not send the control again: the action may still be running.",
-                SESSION + ",\"action\":{\"type\":\"string\",\"enum\":[\"step_into\",\"step_over\",\"step_out\",\"resume\",\"pause\"]},\"timeoutMs\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":30000,\"default\":10000}", Set.of("action"), false,
+            tool("debugger_control", "Steps, resumes, pauses, stops, or restarts the selected session. For stepping and resume, waits for the next pause (with position and frame), for the session to end, or for the timeout. If the wait times out, do not send the control again: the action may still be running.",
+                SESSION + ",\"action\":{\"type\":\"string\",\"enum\":[\"step_into\",\"step_over\",\"step_out\",\"resume\",\"pause\",\"stop\",\"restart\"]},\"timeoutMs\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":30000,\"default\":10000}", Set.of("action"), false,
                 DebuggerToolsProvider::control),
+            LaunchTools.configurationsTool(),
+            LaunchTools.configureTool(),
+            LaunchTools.launchTool(),
             tool("debugger_stack", "Reads up to 20 frames of the selected thread without evaluating their variables.", SESSION, Set.of(), true,
                 DebuggerToolsProvider::stack),
             tool("debugger_evaluate", "Evaluates an expression in the selected, paused frame. Returns the debugger's presentation of the value, truncated to 4096 characters. The expression can execute code.",
@@ -64,9 +67,9 @@ public final class DebuggerToolsProvider implements McpToolsProvider {
                 Set.of("name", "action"), false, DebuggerToolsProvider::origin);
     }
 
-    private record Context(Project project, JsonObject args) {}
+    record Context(Project project, JsonObject args) {}
 
-    private static McpTool tool(String name, String description, String properties, Set<String> required,
+    static McpTool tool(String name, String description, String properties, Set<String> required,
                                 boolean readOnly, BiConsumer<Context, CompletableFuture<JsonObject>> operation) {
         String projectProperty = "\"projectPath\":{\"type\":\"string\",\"description\":\"Absolute path of an open project. If omitted, uses the project the MCP server is serving.\"}";
         var schema = new McpToolSchema((JsonObject) Json.Default.parseToJsonElement(
@@ -83,12 +86,14 @@ public final class DebuggerToolsProvider implements McpToolsProvider {
                 if (name.equals("debugger_control")) {
                     try {
                         waitMillis = controlTimeout(args) + 1000;
+                        if ("restart".equals(optionalString(args, "action"))) waitMillis += 5000;
                     } catch (IllegalArgumentException error) {
                         return result(object("error", error.getMessage()), true);
                     }
                 }
                 var out = new CompletableFuture<JsonObject>();
-                Project mcpProject = McpCallInfoKt.getProjectOrNull(continuation.getContext());
+                Project mcpProject = args.get("projectPath") == null || args.get("projectPath") == JsonNull.INSTANCE
+                        ? McpCallInfoKt.getProjectOrNull(continuation.getContext()) : null;
                 // El EDT modifica los modelos del IDE; solo el worker MCP espera la respuesta.
                 app.invokeLater(() -> {
                     if (out.isDone()) return;
@@ -157,7 +162,7 @@ public final class DebuggerToolsProvider implements McpToolsProvider {
         return sessions.getFirst();
     }
 
-    private static String sessionId(XDebugSession session) {
+    static String sessionId(XDebugSession session) {
         if (session instanceof XDebugSessionImpl impl) return impl.getId().toString();
         throw new IllegalStateException("Esta extensión requiere una sesión local XDebugSessionImpl de PyCharm 2026.2.2.");
     }
@@ -175,7 +180,10 @@ public final class DebuggerToolsProvider implements McpToolsProvider {
         var sessions = new ArrayList<JsonObject>();
         for (XDebugSession s : manager.getDebugSessions()) {
             XWatchesViewImpl view = watchesViewOrNull(s);
-            sessions.add(object("sessionId", sessionId(s), "name", s.getSessionName(), "paused", s.isSuspended(),
+            var env = s.getExecutionEnvironment();
+            var settings = env == null ? null : env.getRunnerAndConfigurationSettings();
+            sessions.add(object("sessionId", sessionId(s), "executionId", env == null ? null : env.getExecutionId(),
+                "configurationName", settings == null ? null : settings.getName(), "name", s.getSessionName(), "paused", s.isSuspended(),
                 "stopped", s.isStopped(), "breakpointsMuted", s.areBreakpointsMuted(), "position", position(s.getCurrentPosition()),
                 "watchesAvailable", view != null, "watches", view == null ? List.of() : watchExpressions(view)));
         }
@@ -202,6 +210,10 @@ public final class DebuggerToolsProvider implements McpToolsProvider {
     private static void control(Context c, CompletableFuture<JsonObject> out) {
         XDebugSession s = session(c);
         String action = string(c.args, "action");
+        if (action.equals("stop") || action.equals("restart")) {
+            LaunchTools.stopOrRestart(s, action.equals("restart"), controlTimeout(c.args), out);
+            return;
+        }
         if (!Set.of("step_into", "step_over", "step_out", "resume", "pause").contains(action)) throw new IllegalArgumentException("action no admitida.");
         JsonObject before = position(s.getCurrentPosition());
         if (!action.equals("pause")) requirePaused(s);
@@ -296,7 +308,7 @@ public final class DebuggerToolsProvider implements McpToolsProvider {
         }, frame.getSourcePosition());
     }
 
-    private static int integer(JsonObject args, String name, int fallback, int min, int max) {
+    static int integer(JsonObject args, String name, int fallback, int min, int max) {
         JsonElement value = args.get(name);
         if (value == null) return fallback;
         Integer number = value instanceof JsonPrimitive p && !p.isString() ? JsonElementKt.getIntOrNull(p) : null;
@@ -459,20 +471,20 @@ public final class DebuggerToolsProvider implements McpToolsProvider {
         return object("sessionId", sessionId(s), "watches", watchExpressions(view));
     }
 
-    private static String optionalString(JsonObject args, String key) {
+    static String optionalString(JsonObject args, String key) {
         JsonElement value = args.get(key);
         if (value == null || value == JsonNull.INSTANCE) return null;
         if (!(value instanceof JsonPrimitive p) || !p.isString()) throw new IllegalArgumentException(key + " debe ser un string.");
         return p.getContent();
     }
 
-    private static String string(JsonObject args, String key) {
+    static String string(JsonObject args, String key) {
         String value = optionalString(args, key);
         if (value == null || value.isBlank()) throw new IllegalArgumentException("Falta " + key + ".");
         return value;
     }
 
-    private static JsonObject object(Object... fields) {
+    static JsonObject object(Object... fields) {
         var map = new LinkedHashMap<String, JsonElement>();
         for (int i = 0; i < fields.length; i += 2) map.put((String) fields[i], json(fields[i + 1]));
         return new JsonObject(map);
