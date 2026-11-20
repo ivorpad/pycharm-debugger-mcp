@@ -28,7 +28,7 @@ final class SetupTool {
     private static final String NAME = "debugger_setup";
     private static final String DEFAULT_SERVER = "Python Debug Server (MCP)";
     private static final String SCHEMA = """
-            "mode":{"type":"string","enum":["pydevd","dap","client","status"],"description":"dap attaches to a listening debugpy endpoint. pydevd starts an incoming debug session. client shows target-side instructions. status checks a named launch without starting it."},
+            "mode":{"type":"string","enum":["pydevd","dap","client","status"],"description":"dap attaches to a listening debugpy endpoint. pydevd starts a Python Debug Server. For Argument Origin provenance, select pydevd in PyCharm and launch a local script with filePath. Both attach modes lack recording. client shows target-side instructions. status checks a named launch without starting it."},
             "configurationName":{"type":"string","description":"Exact saved configuration, or a name for a new pydevd server."},
             "filePath":{"type":"string","description":"Project file to debug, relative to the project or absolute."},
             "line":{"type":"integer","minimum":1,"description":"Optional runnable location in filePath (1-based)."},

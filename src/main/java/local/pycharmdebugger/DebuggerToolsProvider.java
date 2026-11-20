@@ -62,8 +62,10 @@ public final class DebuggerToolsProvider implements McpToolsProvider {
         );
     }
 
+    private static final String ORIGIN_SETUP = "Select pydevd in PyCharm, launch a fresh local script with debugger_setup and filePath using GIL-enabled CPython 3.12–3.15, then pause at a breakpoint.";
+
     static McpTool originTool() {
-        return tool("debugger_origin", "Requires Argument Origin with MCP support and a paused local Python frame. Arm a one-shot value-change pause, stop it, inspect its status, or page through a binding's recorded origin or history. A one-shot monitor disarms at its first change. Resume with debugger_control; status and history are available after the pause. Each frame supports one monitor.",
+        return tool("debugger_origin", "Requires Argument Origin and a recorded local pydevd script session. DAP/debugpy and Python Debug Server attach sessions cannot record provenance. " + ORIGIN_SETUP + " Arm a one-shot value-change pause, stop it, inspect its status, or page through a binding's recorded origin or history. A one-shot monitor disarms at its first change. Resume with debugger_control; status and history are available after the pause. Each frame supports one monitor.",
                 SESSION + ",\"name\":{\"type\":\"string\",\"description\":\"Recorded local variable name in the selected frame.\"},\"action\":{\"type\":\"string\",\"enum\":[\"watch_once\",\"unwatch\",\"watch_status\",\"trace\",\"history\"]},\"offset\":{\"type\":\"integer\",\"minimum\":0,\"default\":0},\"limit\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":50,\"default\":20},\"detail\":{\"type\":\"boolean\",\"description\":\"Include full event details; use offset and limit to inspect individual rows.\",\"default\":false},\"eventId\":{\"type\":\"integer\",\"minimum\":1,\"description\":\"For trace, expand a retained history event in the selected frame.\"},\"changesOnly\":{\"type\":\"boolean\",\"description\":\"For history, omit unchanged assignments and initial arguments.\",\"default\":false}",
                 Set.of("name", "action"), false, DebuggerToolsProvider::origin);
     }
@@ -335,16 +337,25 @@ public final class DebuggerToolsProvider implements McpToolsProvider {
 
     private static void origin(Context c, CompletableFuture<JsonObject> out) {
         XDebugSession s = session(c);
+        // The DAP module is optional. Check the actual process so file launches using debugpy are covered too.
+        for (Class<?> type = s.getDebugProcess().getClass(); type != null; type = type.getSuperclass()) {
+            if (type.getName().equals("com.intellij.platform.dap.xdebugger.DapXDebugProcess"))
+                throw new IllegalStateException("This DAP session has no Argument Origin recording. " + ORIGIN_SETUP);
+        }
+        var env = s.getExecutionEnvironment();
+        var settings = env == null ? null : env.getRunnerAndConfigurationSettings();
+        if (settings != null && LaunchTools.PYDEVD.equals(settings.getType().getId()))
+            throw new IllegalStateException("Python Debug Server attach sessions have no Argument Origin recording. " + ORIGIN_SETUP);
         requirePaused(s);
         XStackFrame frame = s.getCurrentStackFrame();
         XDebuggerEvaluator evaluator = frame == null ? null : frame.getEvaluator();
-        if (evaluator == null) throw new IllegalStateException("The selected frame cannot evaluate expressions.");
+        if (evaluator == null) throw new IllegalStateException("The selected frame cannot evaluate expressions. " + ORIGIN_SETUP);
         String id;
         try {
             id = String.valueOf(frame.getClass().getMethod("getFrameId").invoke(frame));
-            if (!id.matches("[0-9]+")) throw new IllegalArgumentException("The selected Python frame has no numeric frame ID.");
+            if (!id.matches("[0-9]+")) throw new IllegalArgumentException("The selected Python frame has no numeric frame ID. " + ORIGIN_SETUP);
         } catch (ReflectiveOperationException error) {
-            throw new IllegalArgumentException("Argument Origin requires a local Python stack frame.", error);
+            throw new IllegalArgumentException("Argument Origin requires a local pydevd stack frame. " + ORIGIN_SETUP, error);
         }
         String name = string(c.args, "name");
         String action = string(c.args, "action");
@@ -379,7 +390,7 @@ public final class DebuggerToolsProvider implements McpToolsProvider {
             private void cleanup() { try { Files.deleteIfExists(file); } catch (IOException ignored) {} }
             @Override public void errorOccurred(String message) {
                 cleanup();
-                out.completeExceptionally(new IllegalStateException("Argument Origin MCP call failed. Install the updated Argument Origin plugin and start a new recorded debug session: " + message));
+                out.completeExceptionally(new IllegalStateException("Argument Origin MCP call failed: " + message + ". " + ORIGIN_SETUP));
             }
             @Override public void evaluated(XValue value) {
                 try {

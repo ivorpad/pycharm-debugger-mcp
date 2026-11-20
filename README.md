@@ -18,7 +18,7 @@ does. There is no separate debug adapter and no desktop automation.
 src/main/java/local/pycharmdebugger/DebuggerToolsProvider.java   debugger tools
 src/main/resources/META-INF/plugin.xml                           plugin descriptor
 build.gradle.kts  settings.gradle.kts  gradle/  gradlew          Gradle build
-dist/pycharm-debugger-mcp-0.1.8.zip                              installable plugin
+dist/pycharm-debugger-mcp-0.1.9.zip                              installable plugin
 ```
 
 Tool and parameter descriptions are in English. Code comments and error messages are still in Spanish.
@@ -38,7 +38,7 @@ The build writes the installable ZIP to `dist/`. To compile against a local PyCh
 
 ## Install
 
-Open **Settings → Plugins → ⚙ → Install Plugin from Disk…** and select [pycharm-debugger-mcp-0.1.8.zip](dist/pycharm-debugger-mcp-0.1.8.zip). Enable the bundled MCP Server and restart PyCharm if prompted.
+Open **Settings → Plugins → ⚙ → Install Plugin from Disk…** and select [pycharm-debugger-mcp-0.1.9.zip](dist/pycharm-debugger-mcp-0.1.9.zip). Enable the bundled MCP Server and restart PyCharm if prompted.
 
 After the restart the tools show up in the MCP server's catalog under the `Debugger` category.
 
@@ -90,7 +90,7 @@ an omitted `sessionId` is an error rather than a guess.
 | `debugger_evaluate` | `expression` | Evaluates in the selected paused frame |
 | `debugger_breakpoint` | `action`, `filePath`, `line` | Adds or removes a line breakpoint, with an optional `condition` |
 | `debugger_watch` | `action` | `add` / `remove` / `list` against the real Watches panel |
-| `debugger_origin` | `name`, `action` | One-shot change monitor, its status, or paged origin and history |
+| `debugger_origin` | `name`, `action` | Recorded local pydevd sessions only. Monitors changes or reads origin and history |
 
 `debugger_configurations`, `debugger_status` and `debugger_stack` are annotated read-only. The other tools are annotated
 destructive, because they change shared IDE state or run code in the debuggee.
@@ -159,7 +159,7 @@ expression already in the panel is left alone rather than duplicated.
 
 ### Argument Origin
 
-The `debugger_origin` tool is registered only when the Argument Origin plugin is enabled. Install Argument Origin 0.4.3 or later and start a recorded local Python debug session. In a paused frame, call `debugger_origin` with the local `name` and `action=watch_once`, then resume using `debugger_control`. The monitor disarms after the first change. Call `watch_status` after pausing to inspect `armed` and `last_hit`, or `unwatch` to cancel. Another breakpoint may pause first. One frame can monitor one local at a time, and its monitor ends when the frame exits.
+The `debugger_origin` tool is registered only when the Argument Origin plugin is enabled. Install Argument Origin 0.4.3 or later. Select the **pydevd** backend in PyCharm and launch a local script using GIL-enabled CPython 3.12–3.15. With MCP, pass the script’s `filePath` to `debugger_setup`. DAP/debugpy and Python Debug Server attach sessions do not record provenance. In a paused frame, call `debugger_origin` with the local `name` and `action=watch_once`, then resume using `debugger_control`. The monitor disarms after the first change. Call `watch_status` after pausing to inspect `armed` and `last_hit`, or `unwatch` to cancel. Another breakpoint may pause first. One frame can monitor one local at a time, and its monitor ends when the frame exits.
 
 Use `action=trace` or `action=history` for recorded events. Results are paged using `offset` and `limit` (1–50, default 20), with `total` and `nextOffset` in the response. Set `detail=true` to retrieve full event information for a page. For history, `changesOnly=true` omits equal assignments and initial arguments. Each history row has an `eventId`, assignment location and recognized producer. Pass that ID to `action=trace` to expand that retained assignment’s producer chain. Events may expire. The recorder’s retention and redaction settings apply.
 
