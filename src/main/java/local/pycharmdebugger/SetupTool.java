@@ -28,26 +28,28 @@ final class SetupTool {
     private static final String NAME = "debugger_setup";
     private static final String DEFAULT_SERVER = "Python Debug Server (MCP)";
     private static final String SCHEMA = """
-            "mode":{"type":"string","enum":["pydevd","client","status"],"description":"pydevd starts an incoming debug session. client shows target-side instructions. status checks a named launch without starting it."},
+            "mode":{"type":"string","enum":["pydevd","dap","client","status"],"description":"dap attaches to a listening debugpy endpoint. pydevd starts an incoming debug session. client shows target-side instructions. status checks a named launch without starting it."},
             "configurationName":{"type":"string","description":"Exact saved configuration, or a name for a new pydevd server."},
             "filePath":{"type":"string","description":"Project file to debug, relative to the project or absolute."},
             "line":{"type":"integer","minimum":1,"description":"Optional runnable location in filePath (1-based)."},
-            "host":{"type":"string","description":"IDE hostname reachable from the target process."},
-            "port":{"type":"integer","minimum":1,"maximum":65535,"description":"IDE listener port. Defaults to 5678 for a new server."},
+            "host":{"type":"string","description":"For DAP, the debugpy host as seen by the IDE (default 127.0.0.1). For pydevd, the IDE hostname as seen by the target."},
+            "start":{"type":"boolean","description":"With mode=dap, false saves the configuration without connecting. Defaults to true."},
+            "installRunner":{"type":"boolean","description":"With mode=dap, install or enable the official Python DAP Debugger plugin if missing."},
+            "port":{"type":"integer","minimum":1,"maximum":65535,"description":"Target listener port for DAP. For pydevd, the IDE listener defaults to 5678."},
             "remoteRoot":{"type":"string","description":"Absolute target directory corresponding to the project root."}
             """;
 
     static McpTool tool() {
-        return DebuggerToolsProvider.tool(NAME, "Start here for debugger setup. Call with the open projectPath for choices ({} if the client supplies the project), give filePath or configurationName to launch directly, or mode=pydevd to reuse or create and start a Python Debug Server. Follow the returned tool calls.", SCHEMA, Set.of(), false, SetupTool::setup);
+        return DebuggerToolsProvider.tool(NAME, "Start here for debugger setup. Call with the open projectPath for choices ({} if the client supplies the project), give filePath or configurationName to launch directly, mode=dap to create or start an Attach to DAP configuration, or mode=pydevd to reuse or create and start a Python Debug Server. Follow the returned tool calls.", SCHEMA, Set.of(), false, SetupTool::setup);
     }
 
-    private static JsonObject with(JsonObject args, JsonObject changes) {
+    static JsonObject with(JsonObject args, JsonObject changes) {
         var merged = new LinkedHashMap<String, JsonElement>(args);
         merged.putAll(changes);
         return new JsonObject(merged);
     }
 
-    private static JsonObject call(Project project, String tool, JsonObject args) {
+    static JsonObject call(Project project, String tool, JsonObject args) {
         return object("tool", tool, "arguments", with(args, object("projectPath", project.getBasePath())));
     }
 
@@ -63,7 +65,13 @@ final class SetupTool {
         String mode = optionalString(args, "mode");
         String name = optionalString(args, "configurationName");
         boolean hasEndpoint = args.containsKey("host") || args.containsKey("port") || args.containsKey("remoteRoot");
-        if (hasEndpoint && !"pydevd".equals(mode)) throw new IllegalArgumentException("Use mode=pydevd to specify server settings.");
+        if ("dap".equals(mode)) {
+            if (args.containsKey("filePath") || args.containsKey("line")) throw new IllegalArgumentException("DAP attach takes a listening endpoint. Use filePath separately for a local script.");
+            DapSetup.setup(p, args, out);
+            return;
+        }
+        if (args.containsKey("installRunner") || args.containsKey("start")) throw new IllegalArgumentException("installRunner and start require mode=dap.");
+        if (hasEndpoint && !"pydevd".equals(mode)) throw new IllegalArgumentException("Use mode=pydevd or mode=dap to specify connection settings.");
         if (args.containsKey("line") && !args.containsKey("filePath")) throw new IllegalArgumentException("line requires filePath.");
         if (args.containsKey("filePath")) {
             if (name != null || mode != null) throw new IllegalArgumentException("Choose a file or a server/configuration.");
@@ -81,7 +89,7 @@ final class SetupTool {
                 out.complete(guidance(p, saved, state));
             }
         } else if (mode != null) {
-            if (!Set.of("pydevd", "client").contains(mode)) throw new IllegalArgumentException("mode must be pydevd, client or status.");
+            if (!Set.of("pydevd", "client").contains(mode)) throw new IllegalArgumentException("mode must be dap, pydevd, client or status.");
             server(p, args, mode, out);
         } else if (name != null) {
             var saved = LaunchTools.named(p, string(args, "configurationName"));
@@ -111,6 +119,7 @@ final class SetupTool {
         }
         boolean available = LaunchTools.serverType() != null;
         if (available) choices.add(call(p, NAME, object("mode", "pydevd")));
+        choices.add(call(p, NAME, object("mode", "dap")));
         if (configs.size() > 5) choices.add(call(p, "debugger_configurations", object()));
         return object("outcome", "choose_target", "message", "Choose a call below, or supply filePath for a project script or test.",
                 "pydevdServerAvailable", available, "choices", choices);
@@ -173,7 +182,7 @@ final class SetupTool {
         launch(p, saved, out);
     }
 
-    private static void launch(Project p, RunnerAndConfigurationSettings settings, CompletableFuture<JsonObject> out) {
+    static void launch(Project p, RunnerAndConfigurationSettings settings, CompletableFuture<JsonObject> out) {
         boolean server = LaunchTools.PYDEVD.equals(settings.getType().getId());
         var started = new CompletableFuture<JsonObject>();
         // Capture IDE settings on the dispatch thread. A runner can complete its callback on a worker.

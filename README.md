@@ -18,7 +18,7 @@ does. There is no separate debug adapter and no desktop automation.
 src/main/java/local/pycharmdebugger/DebuggerToolsProvider.java   debugger tools
 src/main/resources/META-INF/plugin.xml                           plugin descriptor
 build.gradle.kts  settings.gradle.kts  gradle/  gradlew          Gradle build
-dist/pycharm-debugger-mcp-0.1.7.zip                              installable plugin
+dist/pycharm-debugger-mcp-0.1.8.zip                              installable plugin
 ```
 
 Tool and parameter descriptions are in English. Code comments and error messages are still in Spanish.
@@ -38,7 +38,7 @@ The build writes the installable ZIP to `dist/`. To compile against a local PyCh
 
 ## Install
 
-Open **Settings → Plugins → ⚙ → Install Plugin from Disk…** and select [pycharm-debugger-mcp-0.1.7.zip](dist/pycharm-debugger-mcp-0.1.7.zip). Enable the bundled MCP Server and restart PyCharm if prompted.
+Open **Settings → Plugins → ⚙ → Install Plugin from Disk…** and select [pycharm-debugger-mcp-0.1.8.zip](dist/pycharm-debugger-mcp-0.1.8.zip). Enable the bundled MCP Server and restart PyCharm if prompted.
 
 After the restart the tools show up in the MCP server's catalog under the `Debugger` category.
 
@@ -55,12 +55,21 @@ Pick a returned `tool` and pass its `arguments` unchanged. The arguments include
 | Goal | Arguments to `debugger_setup` |
 | --- | --- |
 | Debug a local file with its PyCharm interpreter | `{"filePath":"src/main.py"}` |
+| Attach to debugpy listening on a local or published container port | `{"mode":"dap","port":5678,"installRunner":true}` |
 | Start the project's existing pydevd server | `{"mode":"pydevd"}` |
 | Create and launch a server for a Docker Desktop container | `{"mode":"pydevd","host":"host.docker.internal","remoteRoot":"/app","port":5679}` |
 
 For a new server, supply the IDE hostname as seen from the target and the target directory matching the project root. The port defaults to 5678. With several saved servers, setup returns a choice. With a running match, it returns the existing session. If settings differ, it shows the current settings and an explicit update call.
 
 After server startup, run your prepared launcher in the target. If you need to prepare one, follow the returned `clientSetup` call for the matching client package, installation commands and a Python snippet using your endpoint. Follow `next` for the IDE session status. If startup is slow or a call times out, the returned status call checks progress without launching a second process.
+
+### Attach to a DAP target
+
+Start the target with its own Python interpreter. For example, run `python -m debugpy --listen 127.0.0.1:5678 --wait-for-client main.py` for a local script. If that interpreter lacks debugpy, install the `debugpy` package in the target environment.
+
+Call `debugger_setup` with `{"mode":"dap","port":5678}`. PyCharm creates an **Attach to DAP** configuration and connects to the target. For a container, use the endpoint published to the IDE and set `remoteRoot` to the container directory corresponding to the project root. The host defaults to `127.0.0.1`. Add `"start":false` to save the configuration before the target is listening. The response includes the launch call.
+
+PyCharm builds 262.10315.174 and 263.7307.329 both ship **Python DAP Debugger** as an essential plugin. On an installation where the runner is missing, follow the returned call with `installRunner:true` to enable the installed plugin or request the JetBrains plugin installer. Complete any IDE installation or restart prompt, then repeat setup to check availability.
 
 ## Tools
 
@@ -91,14 +100,14 @@ destructive, because they change shared IDE state or run code in the debuggee.
 If the project already has a Python Debug Server configuration, call `debugger_launch` with its exact name. This uses the IDE's Debug executor without UI automation.
 
 ```json
-{"configurationName":"Wave pydevd (container)","executor":"Debug"}
+{"configurationName":"Container pydevd","executor":"Debug"}
 ```
 
 For a new project, call `debugger_configure_pydevd` first. This example maps the project root on the current machine to `/app` in a Docker Desktop container. Use the port and source directory from your container launcher and a hostname the container can reach.
 
 ```json
 {
-  "configurationName": "Wave pydevd (container)",
+  "configurationName": "Container pydevd",
   "backend": "pydevd",
   "host": "host.docker.internal",
   "port": 5679,
@@ -108,7 +117,7 @@ For a new project, call `debugger_configure_pydevd` first. This example maps the
 
 Launch the configuration, then run your prepared pydevd client in the container. The container needs a PyCharm-compatible pydevd client. The host field supplies the IDE address for that client. PyCharm opens the listening socket. A `started` result confirms IDE startup. A breakpoint hit confirms the client connected and the mapped source can be debugged. If startup returns `starting`, look up `lastLaunch` with `debugger_configurations` before retrying.
 
-Calling the configuration tool again updates only the supplied fields. Pass `"sourceMappings":[]` to clear the mappings. If `pydevdServerAvailable` is false, check that the Python plugin is enabled and the IDE edition includes Python Debug Server. An existing DAP configuration can also be launched by name when its own Debug runner is installed. For a pydevd client, select the Python Debug Server configuration.
+Calling the configuration tool again updates only the supplied fields. Pass `"sourceMappings":[]` to clear the mappings. If `pydevdServerAvailable` is false, check that the Python plugin is enabled and the IDE edition includes Python Debug Server.
 
 Use `debugger_status` to get the session ID. Call `debugger_control` with `{"action":"stop","sessionId":"…"}` to release the session or `{"action":"restart","sessionId":"…"}` to relaunch the IDE configuration. For a server restart, reconnect the container client.
 
