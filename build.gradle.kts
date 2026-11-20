@@ -15,9 +15,7 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        // Build 262.10315.174. PyCharm Community stopped being published
-        // separately after 2025.3, so this is the unified distribution.
-        pycharm("2026.2.2")
+        pycharm("2026.3.0.1")
         bundledPlugin("com.intellij.mcpServer")
     }
 }
@@ -36,9 +34,8 @@ intellijPlatform {
 
     pluginConfiguration {
         ideaVersion {
-            // Keep the pin the shipped 0.1.2 descriptor carries.
-            sinceBuild = "262.10315.174"
-            untilBuild = "262.10315.174"
+            sinceBuild = "263.7307.329"
+            untilBuild = "263.*"
         }
     }
 }

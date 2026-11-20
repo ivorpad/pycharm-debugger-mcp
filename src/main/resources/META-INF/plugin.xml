@@ -4,7 +4,7 @@
   <version>0.1.2</version>
   <vendor>Local tools</vendor>
   <description>Controles del debugger, breakpoints y Watches del IDE a través del MCP existente.</description>
-  <idea-version since-build="262.10315.174" until-build="262.10315.174" />
+  <idea-version since-build="263.7307.329" until-build="263.*" />
   <depends>com.intellij.modules.platform</depends>
   <depends>com.intellij.mcpServer</depends>
   <extensions defaultExtensionNs="com.intellij">

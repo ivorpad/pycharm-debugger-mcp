@@ -63,8 +63,8 @@ public final class DebuggerToolsProvider implements McpToolsProvider {
         String projectProperty = "\"projectPath\":{\"type\":\"string\",\"description\":\"Absolute path of an open project. If omitted, uses the project the MCP server is serving.\"}";
         var schema = new McpToolSchema((JsonObject) Json.Default.parseToJsonElement(
             "{" + projectProperty + (properties.isEmpty() ? "" : "," + properties) + "}"), required, Map.of(), "$defs");
-        var descriptor = new McpToolDescriptor(name, name, description,
-            new McpToolCategory("Debugger", "local.pycharmdebugger", false, false),
+        var descriptor = new McpToolDescriptor(name, name, description, description,
+                new McpToolCategory("Debugger", "local.pycharmdebugger", false, false, "Debugger", "Control the IDE debugger"),
             "local.pycharmdebugger." + name, schema, null,
             new ToolAnnotations(name, readOnly, !readOnly, readOnly, !readOnly));
         return new McpTool() {

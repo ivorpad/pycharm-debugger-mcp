@@ -10,8 +10,7 @@ does. There is no separate debug adapter and no desktop automation.
 
 ## Requirements
 
-- PyCharm build `262.10315.174` (2026.2.2). `plugin.xml` pins `since-build` and `until-build` to
-  that exact build, so the IDE refuses to load it anywhere else.
+- PyCharm 2026.3, build `263.7307.329` or later in the 263 series. Other builds need separate compatibility testing.
 - The bundled **MCP Server** plugin (`com.intellij.mcpServer`) enabled, with its server running.
 - A Python debug session started from the IDE. The plugin attaches to sessions; it cannot start one.
 
@@ -21,16 +20,16 @@ does. There is no separate debug adapter and no desktop automation.
 src/main/java/local/pycharmdebugger/DebuggerToolsProvider.java   all six tools, 401 lines
 src/main/resources/META-INF/plugin.xml                           plugin descriptor
 build.gradle.kts  settings.gradle.kts  gradle/  gradlew          Gradle build
-pycharm-debugger-mcp/lib/debugger-mcp.jar                        the shipped 0.1.2 build (still has the Spanish descriptions until rebuilt)
+pycharm-debugger-mcp/lib/debugger-mcp.jar                        the 263-series build
 ```
 
 The whole plugin is one Java class. Tool and parameter descriptions are in English. Code comments and error messages are still in Spanish.
 
 ## Building
 
-Needs JDK 25, not 21: PyCharm 2026.2 ships Java 25 class files and javac refuses to read them on
+Needs JDK 25, not 21: PyCharm 2026.3 ships Java 25 class files and javac refuses to read them on
 an older release. The wrapper and the foojay toolchain resolver fetch Gradle and the JDK if they
-are missing, and the first build pulls down PyCharm 2026.2.2, a bit over a gigabyte. After that a
+are missing, and the first build pulls down PyCharm 2026.3.0.1, a bit over a gigabyte. After that a
 build is about ten seconds.
 
 ```sh
@@ -40,10 +39,7 @@ build is about ten seconds.
 The installable zip lands in `build/distributions/`, laid out exactly like the one in
 `pycharm-debugger-mcp/`.
 
-The build output was checked against the shipped `debugger-mcp.jar` before the descriptions were translated: same seven classes with the
-same inner-class numbering, identical method signatures, and the same 97 string constants. The
-class files differ in size only because this build keeps debug info and runs IntelliJ's bytecode
-instrumentation.
+The bundled JAR was compiled against PyCharm 2026.3.0.1. The IDE loaded it and `debugger_status` reported a paused Python session.
 
 ## Install
 
@@ -144,8 +140,7 @@ interpolating shell text.
 
 ## Limitations
 
-- **Pinned to one build.** `until-build` equals `since-build`. Every PyCharm update needs the range
-  bumped and the plugin retested.
+- **Version compatibility.** The plugin targets the 263 series and uses internal APIs. Later IDE builds need testing before extending the range.
 - **Internal APIs.** `XDebugSessionImpl`, `XWatchesViewImpl`, `WatchesRootNode` and
   `XValuePresentationUtil` are implementation classes, not platform API. The session id comes from
   `XDebugSessionImpl.getId()`, so a remote or split-mode session that is not a local
