@@ -1,6 +1,6 @@
 # Debugger MCP Extension for PyCharm
 
-A small PyCharm plugin that exposes the IDE's real debugger over MCP. It registers six tools on
+A small PyCharm plugin that exposes the IDE's real debugger over MCP. It registers six debugger tools on
 JetBrains' built-in MCP server, so an MCP client can set breakpoints, step, read the stack,
 evaluate expressions and edit the Watches panel in a running PyCharm debug session.
 
@@ -17,7 +17,7 @@ does. There is no separate debug adapter and no desktop automation.
 ## Repository layout
 
 ```
-src/main/java/local/pycharmdebugger/DebuggerToolsProvider.java   all six tools, 401 lines
+src/main/java/local/pycharmdebugger/DebuggerToolsProvider.java   debugger tools
 src/main/resources/META-INF/plugin.xml                           plugin descriptor
 build.gradle.kts  settings.gradle.kts  gradle/  gradlew          Gradle build
 pycharm-debugger-mcp/lib/debugger-mcp.jar                        the 263-series build
@@ -76,8 +76,9 @@ an omitted `sessionId` is an error rather than a guess.
 | `debugger_evaluate` | `expression` | Evaluates in the selected paused frame |
 | `debugger_breakpoint` | `action`, `filePath`, `line` | Adds or removes a line breakpoint, with an optional `condition` |
 | `debugger_watch` | `action` | `add` / `remove` / `list` against the real Watches panel |
+| `debugger_origin` | `name`, `action` | One-shot change monitor, its status, or paged origin and history |
 
-`debugger_status` and `debugger_stack` are annotated read-only. The other four are annotated
+`debugger_status` and `debugger_stack` are annotated read-only. The other tools are annotated
 destructive, because they change shared IDE state or run code in the debuggee.
 
 ### Things worth knowing before you call them
@@ -111,6 +112,12 @@ expression runs in the debuggee, so it can have side effects.
 false and `debugger_watch` fails. A Watch added here is a real Watch, re-evaluated by the debugger
 at every pause and visible to whoever is sitting in front of the IDE. `add` is idempotent: an
 expression already in the panel is left alone rather than duplicated.
+
+### Argument Origin
+
+The `debugger_origin` tool is registered only when the Argument Origin plugin is enabled. Install Argument Origin 0.4.3 or later and start a recorded local Python debug session. In a paused frame, call `debugger_origin` with the local `name` and `action=watch_once`, then resume using `debugger_control`. The monitor disarms after the first change. Call `watch_status` after pausing to inspect `armed` and `last_hit`, or `unwatch` to cancel. Another breakpoint may pause first. One frame can monitor one local at a time, and its monitor ends when the frame exits.
+
+Use `action=trace` or `action=history` for recorded events. Results are paged using `offset` and `limit` (1–50, default 20), with `total` and `nextOffset` in the response. Set `detail=true` to retrieve full event information for a page. For history, `changesOnly=true` omits equal assignments and initial arguments. Each history row has an `eventId`, assignment location and recognized producer. Pass that ID to `action=trace` to expand that retained assignment’s producer chain. Events may expire. The recorder’s retention and redaction settings apply.
 
 ## Example
 

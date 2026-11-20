@@ -1,0 +1,5 @@
+<idea-plugin>
+  <extensions defaultExtensionNs="com.intellij">
+    <mcpServer.mcpToolsProvider implementation="local.pycharmdebugger.OriginToolsProvider" />
+  </extensions>
+</idea-plugin>

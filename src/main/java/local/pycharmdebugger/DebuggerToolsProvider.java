@@ -26,6 +26,8 @@ import kotlinx.serialization.json.*;
 
 import javax.swing.Icon;
 import java.nio.file.Path;
+import java.nio.file.Files;
+import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.BiConsumer;
@@ -54,6 +56,12 @@ public final class DebuggerToolsProvider implements McpToolsProvider {
                 SESSION + "," + EXPRESSION + ",\"action\":{\"type\":\"string\",\"enum\":[\"add\",\"remove\",\"list\"]}", Set.of("action"), false,
                 (c, out) -> out.complete(watch(c)))
         );
+    }
+
+    static McpTool originTool() {
+        return tool("debugger_origin", "Requires Argument Origin with MCP support and a paused local Python frame. Arm a one-shot value-change pause, stop it, inspect its status, or page through a binding's recorded origin or history. A one-shot monitor disarms at its first change. Resume with debugger_control; status and history are available after the pause. Each frame supports one monitor.",
+                SESSION + ",\"name\":{\"type\":\"string\",\"description\":\"Recorded local variable name in the selected frame.\"},\"action\":{\"type\":\"string\",\"enum\":[\"watch_once\",\"unwatch\",\"watch_status\",\"trace\",\"history\"]},\"offset\":{\"type\":\"integer\",\"minimum\":0,\"default\":0},\"limit\":{\"type\":\"integer\",\"minimum\":1,\"maximum\":50,\"default\":20},\"detail\":{\"type\":\"boolean\",\"description\":\"Include full event details; use offset and limit to inspect individual rows.\",\"default\":false},\"eventId\":{\"type\":\"integer\",\"minimum\":1,\"description\":\"For trace, expand a retained history event in the selected frame.\"},\"changesOnly\":{\"type\":\"boolean\",\"description\":\"For history, omit unchanged assignments and initial arguments.\",\"default\":false}",
+                Set.of("name", "action"), false, DebuggerToolsProvider::origin);
     }
 
     private record Context(Project project, JsonObject args) {}
@@ -266,6 +274,73 @@ public final class DebuggerToolsProvider implements McpToolsProvider {
                         if (!presentation.isAsync()) setPresentation(icon, presentation.getType(), XValuePresentationUtil.computeValueText(presentation), hasChildren);
                     }
                 }, XValuePlace.TREE);
+            }
+        }, frame.getSourcePosition());
+    }
+
+    private static int integer(JsonObject args, String name, int fallback, int min, int max) {
+        JsonElement value = args.get(name);
+        if (value == null) return fallback;
+        Integer number = value instanceof JsonPrimitive p && !p.isString() ? JsonElementKt.getIntOrNull(p) : null;
+        if (number == null || number < min || number > max) throw new IllegalArgumentException(name + " is out of range.");
+        return number;
+    }
+
+    private static void origin(Context c, CompletableFuture<JsonObject> out) {
+        XDebugSession s = session(c);
+        requirePaused(s);
+        XStackFrame frame = s.getCurrentStackFrame();
+        XDebuggerEvaluator evaluator = frame == null ? null : frame.getEvaluator();
+        if (evaluator == null) throw new IllegalStateException("The selected frame cannot evaluate expressions.");
+        String id;
+        try {
+            id = String.valueOf(frame.getClass().getMethod("getFrameId").invoke(frame));
+            if (!id.matches("[0-9]+")) throw new IllegalArgumentException("The selected Python frame has no numeric frame ID.");
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalArgumentException("Argument Origin requires a local Python stack frame.", error);
+        }
+        String name = string(c.args, "name");
+        String action = string(c.args, "action");
+        if (!Set.of("watch_once", "unwatch", "watch_status", "trace", "history").contains(action))
+            throw new IllegalArgumentException("Unknown Argument Origin action.");
+        int offset = integer(c.args, "offset", 0, 0, Integer.MAX_VALUE);
+        int limit = integer(c.args, "limit", 20, 1, 50);
+        JsonElement detailArg = c.args.get("detail");
+        boolean detail = false;
+        if (detailArg != null) {
+            if (!(detailArg instanceof JsonPrimitive p) || p.isString() || JsonElementKt.getBooleanOrNull(p) == null)
+                throw new IllegalArgumentException("detail must be a boolean.");
+            detail = JsonElementKt.getBoolean((JsonPrimitive) detailArg);
+        }
+        Integer eventId = c.args.containsKey("eventId") ? integer(c.args, "eventId", 0, 1, Integer.MAX_VALUE) : null;
+        if (eventId != null && !action.equals("trace")) throw new IllegalArgumentException("eventId is only valid for trace.");
+        JsonElement changesArg = c.args.get("changesOnly");
+        boolean changesOnly = false;
+        if (changesArg != null) {
+            if (!(changesArg instanceof JsonPrimitive p) || p.isString() || JsonElementKt.getBooleanOrNull(p) == null)
+                throw new IllegalArgumentException("changesOnly must be a boolean.");
+            changesOnly = JsonElementKt.getBoolean((JsonPrimitive) changesArg);
+        }
+        if (changesOnly && !action.equals("history")) throw new IllegalArgumentException("changesOnly is only valid for history.");
+        final Path file;
+        try { file = Files.createTempFile("argument-origin-mcp-", ".json"); }
+        catch (IOException error) { throw new IllegalStateException("Cannot create Argument Origin exchange file.", error); }
+        String expression = "__import__('argument_origin').export_mcp(" + id + "," + json(name) + "," + json(action)
+            + "," + json(file.toString()) + "," + offset + "," + limit + "," + (detail ? "True" : "False")
+            + "," + (eventId == null ? "None" : eventId) + "," + (changesOnly ? "True" : "False") + ")";
+        evaluator.evaluate(expression, new XDebuggerEvaluator.XEvaluationCallback() {
+            private void cleanup() { try { Files.deleteIfExists(file); } catch (IOException ignored) {} }
+            @Override public void errorOccurred(String message) {
+                cleanup();
+                out.completeExceptionally(new IllegalStateException("Argument Origin MCP call failed. Install the updated Argument Origin plugin and start a new recorded debug session: " + message));
+            }
+            @Override public void evaluated(XValue value) {
+                try {
+                    JsonElement report = Json.Default.parseToJsonElement(Files.readString(file));
+                    out.complete(object("sessionId", sessionId(s), "report", report));
+                } catch (Exception error) {
+                    out.completeExceptionally(new IllegalStateException("Could not read the Argument Origin report.", error));
+                } finally { cleanup(); }
             }
         }, frame.getSourcePosition());
     }
