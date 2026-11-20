@@ -10,7 +10,7 @@ does. There is no separate debug adapter and no desktop automation.
 
 ## Requirements
 
-- PyCharm 2026.3, build `263.7307.329` or later in the 263 series. Other builds need separate compatibility testing.
+- PyCharm with the bundled debugger and MCP APIs. The extension handles the tool descriptor formats in 2026.2.2 and 2026.3.0.1.
 - The bundled **MCP Server** plugin (`com.intellij.mcpServer`) enabled, with its server running.
 - A Python debug session started from the IDE. The plugin attaches to sessions; it cannot start one.
 
@@ -20,10 +20,10 @@ does. There is no separate debug adapter and no desktop automation.
 src/main/java/local/pycharmdebugger/DebuggerToolsProvider.java   debugger tools
 src/main/resources/META-INF/plugin.xml                           plugin descriptor
 build.gradle.kts  settings.gradle.kts  gradle/  gradlew          Gradle build
-pycharm-debugger-mcp/lib/debugger-mcp.jar                        the 263-series build
+dist/pycharm-debugger-mcp-0.1.5.zip                              installable plugin
 ```
 
-The whole plugin is one Java class. Tool and parameter descriptions are in English. Code comments and error messages are still in Spanish.
+Tool and parameter descriptions are in English. Code comments and error messages are still in Spanish.
 
 ## Building
 
@@ -36,28 +36,11 @@ build is about ten seconds.
 ./gradlew buildPlugin
 ```
 
-The installable zip lands in `build/distributions/`, laid out exactly like the one in
-`pycharm-debugger-mcp/`.
-
-The bundled JAR was compiled against PyCharm 2026.3.0.1. The IDE loaded it and `debugger_status` reported a paused Python session.
+The build writes the installable ZIP to `dist/`. To compile against a local PyCharm 2026.3.0.1 installation on macOS, pass `-PpycharmPath=/Applications/PyCharm.app`.
 
 ## Install
 
-
-The archive layout is what *Settings > Plugins > ⚙ > Install Plugin from Disk…* expects:
-
-```
-pycharm-debugger-mcp/
-└── lib/
-    └── debugger-mcp.jar
-```
-
-Zip the `pycharm-debugger-mcp` directory and install that zip, or drop the directory straight into
-the IDE's `plugins/` folder and restart:
-
-```sh
-zip -r pycharm-debugger-mcp.zip pycharm-debugger-mcp
-```
+Open **Settings → Plugins → ⚙ → Install Plugin from Disk…** and select [pycharm-debugger-mcp-0.1.5.zip](dist/pycharm-debugger-mcp-0.1.5.zip). Enable the bundled MCP Server and restart PyCharm if prompted.
 
 After the restart the tools show up in the MCP server's catalog under the `Debugger` category.
 
@@ -147,7 +130,6 @@ interpolating shell text.
 
 ## Limitations
 
-- **Version compatibility.** The plugin targets the 263 series and uses internal APIs. Later IDE builds need testing before extending the range.
 - **Internal APIs.** `XDebugSessionImpl`, `XWatchesViewImpl`, `WatchesRootNode` and
   `XValuePresentationUtil` are implementation classes, not platform API. The session id comes from
   `XDebugSessionImpl.getId()`, so a remote or split-mode session that is not a local

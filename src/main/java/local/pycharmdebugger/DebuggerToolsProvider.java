@@ -71,10 +71,7 @@ public final class DebuggerToolsProvider implements McpToolsProvider {
         String projectProperty = "\"projectPath\":{\"type\":\"string\",\"description\":\"Absolute path of an open project. If omitted, uses the project the MCP server is serving.\"}";
         var schema = new McpToolSchema((JsonObject) Json.Default.parseToJsonElement(
             "{" + projectProperty + (properties.isEmpty() ? "" : "," + properties) + "}"), required, Map.of(), "$defs");
-        var descriptor = new McpToolDescriptor(name, name, description, description,
-                new McpToolCategory("Debugger", "local.pycharmdebugger", false, false, "Debugger", "Control the IDE debugger"),
-            "local.pycharmdebugger." + name, schema, null,
-            new ToolAnnotations(name, readOnly, !readOnly, readOnly, !readOnly));
+        var descriptor = descriptor(name, description, schema, new ToolAnnotations(name, readOnly, !readOnly, readOnly, !readOnly));
         return new McpTool() {
             @Override public McpToolDescriptor getDescriptor() { return descriptor; }
 
@@ -115,6 +112,27 @@ public final class DebuggerToolsProvider implements McpToolsProvider {
                 }
             }
         };
+    }
+
+    private static McpToolDescriptor descriptor(String name, String description, McpToolSchema schema,
+                                                ToolAnnotations annotations) {
+        String id = "local.pycharmdebugger." + name;
+        try {
+            var category = new McpToolCategory("Debugger", "local.pycharmdebugger", false, false, "Debugger", "Control the IDE debugger");
+            return new McpToolDescriptor(name, name, description, description, category, id, schema, null, annotations);
+        } catch (NoSuchMethodError newerApiMissing) {
+            // The 262 MCP server predates the separate display strings on categories and tools.
+            try {
+                var category = McpToolCategory.class.getConstructor(String.class, String.class, boolean.class, boolean.class)
+                        .newInstance("Debugger", "local.pycharmdebugger", false, false);
+                return McpToolDescriptor.class.getConstructor(String.class, String.class, String.class, McpToolCategory.class,
+                                String.class, McpToolSchema.class, McpToolSchema.class, ToolAnnotations.class)
+                        .newInstance(name, name, description, category, id, schema, null, annotations);
+            } catch (ReflectiveOperationException olderApiMissing) {
+                olderApiMissing.addSuppressed(newerApiMissing);
+                throw new IllegalStateException("Unsupported MCP tool descriptor API", olderApiMissing);
+            }
+        }
     }
 
     private static Project project(JsonObject args, Project fallback) {

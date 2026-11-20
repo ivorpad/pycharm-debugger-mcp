@@ -1,10 +1,9 @@
 <idea-plugin>
   <id>local.pycharm.debugger.mcp</id>
   <name>Debugger MCP Extension</name>
-  <version>0.1.4</version>
+  <version>0.1.5</version>
   <vendor>Local tools</vendor>
   <description>Controles del debugger, breakpoints y Watches del IDE a través del MCP existente.</description>
-  <idea-version since-build="263.7307.329" until-build="263.*" />
   <depends>com.intellij.modules.platform</depends>
   <depends>com.intellij.mcpServer</depends>
   <depends optional="true" config-file="argument-origin.xml">local.argument.origin</depends>

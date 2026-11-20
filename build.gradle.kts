@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "local.pycharmdebugger"
-version = "0.1.4"
+version = "0.1.5"
 
 repositories {
     mavenCentral()
@@ -15,27 +15,37 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        pycharm("2026.3.0.1")
+        val sdkPath = providers.gradleProperty("pycharmPath").orNull
+        if (sdkPath == null) pycharm("2026.3.0.1") else local(sdkPath)
         bundledPlugin("com.intellij.mcpServer")
+        bundledModules("intellij.platform.debugger", "intellij.platform.debugger.impl",
+            "intellij.platform.debugger.impl.rpc", "intellij.platform.debugger.impl.shared", "intellij.platform.debugger.impl.ui")
     }
 }
 
 java {
     toolchain {
-        // PyCharm 2026.2 ships Java 25 class files, and the shipped
-        // debugger-mcp.jar is major version 69 too.
         languageVersion = JavaLanguageVersion.of(25)
     }
 }
 
 intellijPlatform {
+    instrumentCode = false
     // Nothing here adds a Settings page, so there is nothing to index.
     buildSearchableOptions = false
 
     pluginConfiguration {
         ideaVersion {
-            sinceBuild = "263.7307.329"
-            untilBuild = "263.*"
+            sinceBuild = provider { null }
+            untilBuild = provider { null }
         }
     }
+}
+
+tasks.buildPlugin {
+    destinationDirectory = layout.projectDirectory.dir("dist")
+}
+
+tasks.processResources {
+    from("LICENSE") { into("META-INF") }
 }
